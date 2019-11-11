@@ -1,0 +1,55 @@
+---
+title: "01_DataCleaning_Trout_WV"
+author: "John Kemper"
+date: "11/11/2019"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+
+library(tidyverse)
+library(lubridate)
+library(ggplot)
+library(ggthemes)
+library(sf)
+library(tools)
+library(purrr)
+library(tmap)
+
+```
+
+
+###Load and save data
+```{r}
+
+# trout <- read_csv("C:/Users/jkemper/Downloads/tuwv.csv")
+
+# dir.create("data")
+
+# write.csv(trout, file = "data/trout_wv.csv")
+
+trout <- read_csv("data/trout_wv.csv")
+
+View(trout)
+
+```
+
+##Clean data
+```{r}
+
+##Remove extraneous columns and arrange by sampling data for each site
+
+
+trout_cleaned <- trout %>%
+  select(-c(Authority, SearchTime, GroupName, X1, Recorder,
+            Comments)) %>%
+  group_by(AreaName) %>%
+  arrange(VisitDate, .by_group = TRUE)
+
+
+```
+
+
