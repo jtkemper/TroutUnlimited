@@ -12,12 +12,14 @@ knitr::opts_chunk$set(echo = TRUE)
 
 library(tidyverse)
 library(lubridate)
-library(ggplot)
+library(ggplot2)
 library(ggthemes)
 library(sf)
 library(tools)
 library(purrr)
 library(tmap)
+library(stringr)
+
 
 ```
 
@@ -31,23 +33,112 @@ library(tmap)
 
 # write.csv(trout, file = "data/trout_wv.csv")
 
-trout <- read_csv("data/trout_wv.csv")
+trout <- read_csv("data/trout_wv.csv") 
 
-View(trout)
+
 
 ```
 
-##Clean data
+##Clean data (remove extraneous columns and combine columns that have the same data)
 ```{r}
 
 ##Remove extraneous columns and arrange by sampling data for each site
-
-
+##Also remove special characters
 trout_cleaned <- trout %>%
   select(-c(Authority, SearchTime, GroupName, X1, Recorder,
             Comments)) %>%
+  rename_all(~str_replace_all(., " ", "_")) %>%
+  rename_all(~str_remove_all(., "[\\( \\)<>-]"))
+
+
+
+
+###Function to get the names of the user-specified variables
+###Using the user-specified pattern
+###E.g. specifying chr = "Turb" will return the names
+###of all turbidity columns
+name_extractor <- function(df, chr) {
+  
+  var_name <- df %>%
+    names() %>%
+    str_subset(., chr)
+  
+}
+
+
+###Combines columns that share the pattern specified by the user in 
+###the name_extractor
+###E.g. if the user wishes to identify all the turbidity columns
+###This function will combine them 
+col_combiner <- function(df, lst) {
+  
+  combo_name <- paste0("Complete_", lst[1])
+  
+  col_comb <- df %>%
+    mutate(., !!combo_name := coalesce(get(lst))) %>%
+    select(., -lst)
+  
+
+}
+
+trout_cleaned_complete <- trout_cleaned %>%
+  col_combiner(., name_extractor(., "Turbidity_NTU")) %>%
+  col_combiner(., name_extractor(., "Water_pH")) %>%
+  col_combiner(., name_extractor(., "Stream_Flow")) %>% 
+  col_combiner(., name_extractor(., "Conductivity")) %>%
+  col_combiner(., name_extractor(., "Water_Condition")) %>%
+  col_combiner(., name_extractor(., "Stream_Velocity"))
+  
+
+names(trout_cleaned)
+
+trout_cleaned_complete %>% select(Complete_Water_Condition)
+
+
+
+# trout_turb <- trout_cleaned %>%
+  # select(VisitDate, AreaName, Turbidity_NTU, Turbidity_NTU_1, Turbidity_NTU_2)
+
+#trout_turb
+
+#turb_namez <- name_extractor(trout_turb, "Turbidity_NTU")
+#turb_namez
+
+#turb_com <- col_combiner(trout_turb, turb_namez)
+#turb_com
+
+```
+
+
+###Do some data exploration - see how much data each site has and how much of each kind of data exist for all sites
+```{r}
+
+###Calculate summary statistics
+trout_sumstats <- trout_cleaned %>%
   group_by(AreaName) %>%
-  arrange(VisitDate, .by_group = TRUE)
+  arrange(VisitDate, .by_group = TRUE) %>%
+  summarise(n = n()) %>%
+  filter(n>5)
+
+
+###Function to count the number of observations in each column (excluding NAs)
+counter <- function(df) {
+  
+  df %>%
+    na.omit(.) %>%
+    length()
+    
+}
+
+
+###Count number of observations in each column
+col_obs <- map(turb_com, ~counter(.)) %>%
+  as.data.frame() %>%
+  gather() %>%
+  filter(value > 2)
+
+col_obs
+col_obs$value[17] + col_obs$value[31] + col_obs$value[34]
 
 
 ```
