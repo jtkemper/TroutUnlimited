@@ -48,9 +48,10 @@ trout_cleaned <- trout %>%
   select(-c(Authority, SearchTime, GroupName, X1, Recorder,
             Comments)) %>%
   rename_all(~str_replace_all(., " ", "_")) %>%
-  rename_all(~str_remove_all(., "[\\( \\)<>-]"))
+  rename_all(~str_remove_all(., "[\\( \\)<>-]")) %>%
+  select(-c(The_Location_Name))
 
-
+names(trout_cleaned)
 
 
 ###Function to get the names of the user-specified variables
@@ -62,6 +63,13 @@ name_extractor <- function(df, chr) {
   var_name <- df %>%
     names() %>%
     str_subset(., chr)
+  
+  if(length(var_name) > 1) {
+    
+    return(var_name)
+  }
+  
+  else{return(NA)}
   
 }
 
@@ -76,51 +84,54 @@ col_combiner <- function(df, lst) {
   
   col_comb <- df %>%
     mutate(., !!combo_name := coalesce(get(lst))) %>%
-    select(., -lst)
+    select(., combo_name)
   
 
 }
 
-trout_cleaned_complete <- trout_cleaned %>%
-  col_combiner(., name_extractor(., "Turbidity_NTU")) %>%
-  col_combiner(., name_extractor(., "Water_pH")) %>%
-  col_combiner(., name_extractor(., "Stream_Flow")) %>% 
-  col_combiner(., name_extractor(., "Conductivity")) %>%
-  col_combiner(., name_extractor(., "Water_Condition")) %>%
-  col_combiner(., name_extractor(., "Stream_Velocity"))
-  
+###Combine column names into lists that all refer to the same variable
+###E.g. Turbidity_NTU, Turbidity_NTU_1, and Turbidity_NTU_2 would all be in the same list
+combined_names <- map(all_cols, ~name_extractor(trout_clean_test, .)) %>%
+  .[!is.na(.)]
 
-names(trout_cleaned)
+combined_names
+###Combine those redundant columns into one so we have a data frame of the 
+###Complete observations for each variable
+extracted_columns <- map_dfc(combined_names, ~col_combiner(trout_cleaned, .)) 
 
-trout_cleaned_complete %>% select(Complete_Water_Condition)
+View(extracted_columns)
+
+###Combine the complete variable observations with the sites and locations information
+sites_and_locations <- select(trout_cleaned, 1:7)
 
 
+trout_cleaned_complete <- cbind(sites_and_locations, extracted_columns)
 
-# trout_turb <- trout_cleaned %>%
-  # select(VisitDate, AreaName, Turbidity_NTU, Turbidity_NTU_1, Turbidity_NTU_2)
-
-#trout_turb
-
-#turb_namez <- name_extractor(trout_turb, "Turbidity_NTU")
-#turb_namez
-
-#turb_com <- col_combiner(trout_turb, turb_namez)
-#turb_com
-
+unique(trout_cleaned_complete$AreaName)
 ```
 
 
 ###Do some data exploration - see how much data each site has and how much of each kind of data exist for all sites
 ```{r}
 
-###Calculate summary statistics
-trout_sumstats <- trout_cleaned %>%
+###Calculate how many observations are at each site
+trout_observations <- trout_cleaned_complete %>%
+  group_by(AreaName) %>%
+  arrange(VisitDate, .by_group = TRUE) %>%
+  summarise(n = n())
+
+
+###Identify the sites with more than 5 observations
+trout_observations_morethan5 <- trout_cleaned_complete %>%
   group_by(AreaName) %>%
   arrange(VisitDate, .by_group = TRUE) %>%
   summarise(n = n()) %>%
-  filter(n>5)
+  filter(n > 5)
 
-
+###Get data for the sites with more than five obervations 
+trout_cleaned_selected_sites <- left_join(trout_cleaned_complete, trout_observations, by = "AreaName") %>%
+  filter(n > 5)
+  
 ###Function to count the number of observations in each column (excluding NAs)
 counter <- function(df) {
   
@@ -130,15 +141,25 @@ counter <- function(df) {
     
 }
 
-
-###Count number of observations in each column
-col_obs <- map(turb_com, ~counter(.)) %>%
+###Count number of observations for each variable
+observation_count <- map(trout_cleaned_selected_sites, ~counter(.)) %>%
   as.data.frame() %>%
   gather() %>%
-  filter(value > 2)
+  filter(value > 200)
 
-col_obs
-col_obs$value[17] + col_obs$value[31] + col_obs$value[34]
+###Select only variables that have more than 200 observations
+trout_final <- trout_cleaned_selected_sites %>%
+  select(observation_count$key[1:nrow(observation_count)])
+
+names(trout_final)
+
+###Calculate summary statistics
+trout_sumstats <- trout_final %>%
+  group_by(AreaName, Longitude, Latitude) %>%
+  arrange(VisitDate, .by_group = TRUE) %>%
+  summarise_at(., vars(5:20), list(~min(.), ~mean(.), ~max(.)), .keep_all= TRUE) %>%
+  rename_all(~str_remove_all(., "Complete_"))
+  
 
 
 ```
